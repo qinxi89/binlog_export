@@ -7,8 +7,6 @@
 import os.path
 import re
 import subprocess
-import time
-
 
 def Parsing_Binlog(start_datetime,stop_datetime,database,binlog_filename):
     '''
@@ -18,7 +16,6 @@ def Parsing_Binlog(start_datetime,stop_datetime,database,binlog_filename):
     :param binlog_filename: "mysql-bin.000007"
     :return: "./binlog-export.sql"
     '''
-
     output_file = "./binlog-export.sql"
 
     # 构造命令行参数
@@ -46,40 +43,56 @@ def Parsing_Binlog(start_datetime,stop_datetime,database,binlog_filename):
 def Export_Restore_Sql(binlog):
     # 读取导出的日志文件
     print(f'开始解析日志{binlog}.....')
-    with open(binlog, 'r',encoding='utf-8') as f:
-        log_file = f.read()
+    try:
+        # Open the input file
+        with open(binlog, 'r') as f:
+            content = f.read()
 
-    # 进行必要的筛选和转换以生成可执行的SQL语句
-    insert_statements = []
-    for statement in re.findall(r'/\*.*\*/;\n(###.*?);', log_file, re.DOTALL):
-        statement = re.sub(r'/\*.*?\*/', '', statement)
-        statement = statement.replace('DELETE FROM', 'INSERT INTO').replace('WHERE', 'SELECT')
-        statement = re.sub(r'(@\d+=)', '', statement)
-        statement = re.sub(r'(@\d+=)', '', statement)
-        statement = re.sub(r'(@\d+=)', '', statement)
-        statement = re.sub(r'(@\d+=)', '', statement)
-        statement = re.sub(r'(@\d+=)', '', statement)
-        statement = re.sub(r'(@\d+=)', '', statement)
-        statement = re.sub(r'(@\d+=)', '', statement)
-        statement = re.sub(r'(@\d+=)', '', statement)
-        statement = re.sub(r',(\n|\s)*\)', ')', statement)
-        insert_statements.append(statement.strip() + ';')
+        # Extract lines that contain '###'
+        pattern = re.compile('.*###.*\n')
+        matches = pattern.findall(content)
 
-    print(f'正在打开{binlog}')
-    # 将生成的SQL语句写入到一个新的SQL文件中，该文件可以用于恢复数据库
-    with open('mysqllogOK.sql', 'w') as f:
-        f.write('\n'.join(insert_statements))
+        # Process the matching lines
+        output = []
+        for match in matches:
+            # Remove '### '
+            line = match.replace('### ', '')
+            # Remove comments
+            line = re.sub(r'\/\*.*?\*\/', ',', line)
+            # Replace 'DELETE FROM' with ';INSERT INTO'
+            line = line.replace('DELETE FROM', ';INSERT INTO')
+            # Replace 'WHERE' with 'SELECT'
+            line = line.replace('WHERE', 'SELECT')
+            # Replace '@17' with '@17;'
+            line = re.sub(r'(@17.*),', r'\1;', line)
+            # Remove '@1='
+            line = line.replace('@1=', '')
+            # Remove '@[1-9]='
+            line = re.sub(r'@[1-9]=', ',', line)
+            # Remove '@[1-9][0-9]='
+            line = re.sub(r'@[1-9][0-9]=', ',', line)
+            # Remove ';'
+            #line = line.replace(';', '')
+            output.append(line)
 
-    print('mysqllogOK.sql 写入成功！')
+        sql = './mysql-logOK.sql'
+        # Write the output to a file
+        with open(f'{sql}', 'w') as f:
+            f.write('\n'.join(output))
+        print(f'{sql} 写入成功！')
+
+    except Exception as e:
+        print(f'Error occurred: {e}')
+
 
 export_sql = './binlog-export.sql'
 
+# 执行此程序时，需要修改Parsing_Binlog函数中所需的四个参数，运行后可得可执行的SQL
 Parsing_Binlog("2023-04-01 11:36:00", "2023-04-01 11:40:00", "db_bulv_chao","/root/mysql-bin.001129")
 size = os.path.getsize(export_sql)
 if size == 0:
    exit('binlog解析文件为空！')
 else:
-   print('im here')
    Export_Restore_Sql(export_sql)
 
 if not os.path.exists(export_sql):
